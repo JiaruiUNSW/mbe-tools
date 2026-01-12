@@ -42,3 +42,23 @@ def test_run_control_wrapper_includes_attempt_and_delete_rules():
     assert "._try.out" in txt  # log naming for attempts
     assert "skip_if_done" in txt
     assert "allow_delete_outputs" in txt
+
+
+def test_pbs_qchem_chunk_mode_escapes_filenames():
+    """Test that filenames with spaces are properly escaped in chunk mode."""
+    txt = render_pbs_qchem(job_name="test", chunk_size=5)
+    # Verify that we use printf '%q' to escape filenames
+    assert "printf '%q'" in txt
+    assert "chunk_escaped" in txt
+    # Verify that we use eval to reconstruct the array safely
+    assert 'eval "files_to_run=(${chunk_escaped})"' in txt
+
+
+def test_slurm_orca_chunk_mode_escapes_filenames():
+    """Test that filenames with spaces are properly escaped in Slurm chunk mode."""
+    txt = render_slurm_orca(job_name="test", chunk_size=3)
+    # Verify that we use printf '%q' to escape filenames
+    assert "printf '%q'" in txt
+    assert "chunk_escaped" in txt
+    # Verify that we use eval to reconstruct the array safely
+    assert 'eval "files_to_run=(${chunk_escaped})"' in txt
