@@ -1,0 +1,51 @@
+#!/bin/bash
+#PBS -N demo
+#PBS -j oe
+#PBS -l walltime=24:00:00,mem=32000Mb,ncpus=16
+#PBS -o demo.log
+
+set -euo pipefail
+shopt -s nullglob
+
+FILES_PER_JOB=10
+WALLTIME=24:00:00
+MEM=32000Mb
+NCPUS=16
+QC_MOD=qchem/5.2.2
+BASE_JOBNAME=demo
+
+files=( *.inp )
+if ((${#files[@]} == 0)); then echo '[ERR] no inputs'; exit 1; fi
+job_index=0
+start=0
+while (( start < ${#files[@]} )); do
+  job_index=$(( job_index + 1 ))
+  chunk=()
+  end=$(( start + FILES_PER_JOB ))
+  if (( end > ${#files[@]} )); then end=${#files[@]}; fi
+  for (( i=start; i<end; i++ )); do chunk+=( "${files[i]}" ); done
+  jobname="${BASE_JOBNAME}_${job_index}"
+  pbsfile="._${jobname}.pbs"
+  chunk_quoted=$(printf '%q ' "${chunk[@]}")
+  cat > "${pbsfile}" <<EOF
+#!/bin/bash
+#PBS -j oe
+#PBS -N ${jobname}
+#PBS -l walltime=${WALLTIME},mem=${MEM},ncpus=${NCPUS}
+#PBS -o ${jobname}.log
+
+cd "\${PBS_O_WORKDIR:-.}"
+export TMPDIR="\${TMPDIR:-/tmp}"
+module load ${QC_MOD}
+# Unquoted expansion is intentional: chunk_quoted contains shell-escaped tokens
+files_to_run=( ${chunk_quoted} )
+for f in "\${files_to_run[@]}"; do
+  base="\${f%.inp}"; out="\${base}.out"
+  qchem -np ${NCPUS} "\$f" "\$out"
+done
+EOF
+  qsub "${pbsfile}"
+  start=$end
+done
+
+echo "[OK] submitted $job_index PBS jobs"
