@@ -66,6 +66,8 @@ def _resolve_library_root(dest: Optional[str]) -> Path:
             if text:
                 return Path(text).expanduser()
         except OSError:
+            # If the library config file cannot be read (permissions, corruption, etc.),
+            # ignore the error and fall back to the default runs directory.
             pass
 
     return default_runs
@@ -454,8 +456,8 @@ def show(
                 prev = e_val
         if missing:
             typer.echo(f"Missing lower-order subsets: {sorted(set(missing))}")
-    except Exception:
-        pass
+    except Exception as e:
+        typer.echo(f"Warning: failed to compute strict MBE energies ({e}). Continuing without this section.", err=True)
 
     # Monomer participation summary
     if monomer is not None:
