@@ -682,7 +682,7 @@ def render_slurm_orca(
             f"ORCA_CMD=${{ORCA_CMD:-{command}}}",
             f"SBFILE=${{SBFILE:-._{job_name}.sbatch}}",
             "",
-            "cat > \"${SBFILE}\" <<'EOF'",
+            "cat > \"${SBFILE}\" <<EOF",
             "#!/bin/bash",
             "#SBATCH --job-name=${JOB_NAME}",
             "#SBATCH --time=${WALLTIME}",
