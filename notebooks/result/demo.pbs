@@ -37,9 +37,9 @@ cd "${PBS_O_WORKDIR:-.}"
 export TMPDIR=${TMPDIR:-/tmp}
 module load ${QC_MOD}
 # Write chunk files inline with proper quoting
-for f in "${chunk[@]}"; do
-  base="${f%.inp}"; out="${base}.out"
-  qchem -np ${NCPUS} "$f" "$out"
+for f in "\${chunk[@]}"; do
+  base="\${f%.inp}"; out="\${base}.out"
+  qchem -np ${NCPUS} "\$f" "\$out"
 done
 EOF
   qsub "${pbsfile}"
