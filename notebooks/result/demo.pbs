@@ -8,6 +8,7 @@ set -euo pipefail
 shopt -s nullglob
 
 FILES_PER_JOB=10
+WALLTIME=24:00:00
 MEM=32000Mb
 NCPUS=16
 QC_MOD=qchem/5.2.2
