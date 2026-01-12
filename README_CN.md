@@ -144,7 +144,7 @@ mbe analyze parsed.jsonl --to-csv results.csv --to-xlsx results.xlsx --plot mbe.
 | `mbe info <jsonl>`       | 默认 JSONL 选择                                                   | 覆盖率 + CPU 汇总                   | `mbe info`                                               |
 | `mbe calc <jsonl>`       | `--scheme simple/strict`，`--unit hartree/kcal/kj`，`--to/--from` | CPU 总和 + MBE 能量                 | `mbe calc parsed.jsonl --scheme strict --unit kcal`      |
 | `mbe save <jsonl>`       | `--dest DIR`                                                      | 按 cluster_id/时间戳 归档 JSONL     | `mbe save parsed.jsonl --dest runs/`                     |
-| `mbe compare <dir        | glob>`                                                            | `--cluster ID`                      | 多 JSONL 结果对比                                        | `mbe compare runs/**/*.jsonl --cluster water20` |
+| `mbe compare <dir\|glob>` | `--cluster ID`                                                   | 多 JSONL 结果对比                   | `mbe compare runs/**/*.jsonl --cluster water20`          |
 
 ## Run-control（模板）
 
