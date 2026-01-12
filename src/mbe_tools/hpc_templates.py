@@ -434,7 +434,7 @@ def render_pbs_qchem(
             f"QC_MOD=${{QC_MOD:-{module}}}",
             f"PBSFILE=${{PBSFILE:-._{job_name}.pbs}}",
             "",
-            "cat > \"${PBSFILE}\" <<'EOF'",
+            "cat > \"${PBSFILE}\" <<EOF",
             "#!/bin/bash",
             "#PBS -N ${JOB_NAME}",
             "#PBS -l walltime=${WALLTIME},mem=${MEM_MB}Mb,ncpus=${NCPUS}",
