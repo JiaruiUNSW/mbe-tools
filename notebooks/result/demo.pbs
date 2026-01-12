@@ -35,8 +35,9 @@ while (( start < ${#files[@]} )); do
 #PBS -o ${jobname}.log
 
 cd "\${PBS_O_WORKDIR:-.}"
-export TMPDIR=\${TMPDIR:-/tmp}
+export TMPDIR="\${TMPDIR:-/tmp}"
 module load ${QC_MOD}
+# Unquoted expansion is intentional: chunk_quoted contains shell-escaped tokens
 files_to_run=( ${chunk_quoted} )
 for f in "\${files_to_run[@]}"; do
   base="\${f%.inp}"; out="\${base}.out"
