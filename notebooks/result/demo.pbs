@@ -26,6 +26,7 @@ while (( start < ${#files[@]} )); do
   for (( i=start; i<end; i++ )); do chunk+=( "${files[i]}" ); done
   jobname="${BASE_JOBNAME}_${job_index}"
   pbsfile="._${jobname}.pbs"
+  chunk_quoted=$(printf '%q ' "${chunk[@]}")
   cat > "${pbsfile}" <<EOF
 #!/bin/bash
 #PBS -j oe
@@ -33,11 +34,12 @@ while (( start < ${#files[@]} )); do
 #PBS -l walltime=${WALLTIME},mem=${MEM},ncpus=${NCPUS}
 #PBS -o ${jobname}.log
 
-cd "${PBS_O_WORKDIR:-.}"
-export TMPDIR=${TMPDIR:-/tmp}
+cd "\${PBS_O_WORKDIR:-.}"
+export TMPDIR="\${TMPDIR:-/tmp}"
 module load ${QC_MOD}
-# Write chunk files inline with proper quoting
-for f in "\${chunk[@]}"; do
+# Unquoted expansion is intentional: chunk_quoted contains shell-escaped tokens
+files_to_run=( ${chunk_quoted} )
+for f in "\${files_to_run[@]}"; do
   base="\${f%.inp}"; out="\${base}.out"
   qchem -np ${NCPUS} "\$f" "\$out"
 done
