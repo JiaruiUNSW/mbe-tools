@@ -66,6 +66,8 @@ def _resolve_library_root(dest: Optional[str]) -> Path:
             if text:
                 return Path(text).expanduser()
         except OSError:
+            # If the library config file cannot be read (permissions, corruption, etc.),
+            # ignore the error and fall back to the default runs directory.
             pass
 
     return default_runs
