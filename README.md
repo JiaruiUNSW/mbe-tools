@@ -7,7 +7,7 @@
 - **Parsing**: read ORCA / Q-Chem outputs, infer method/basis/grid metadata from paths or companion inputs, and write JSONL.
 - **Analysis**: inclusion–exclusion MBE(k), summaries, CSV/Excel export, and basic plots.
 
-Status: **0.1.0 (MVP)**. Backend syntax (e.g., ghost atoms) may need local tweaks.
+Status: **0.1.3 (MVP)**. Backend syntax (e.g., ghost atoms) may need local tweaks.
 
 **What changed (P0–P5)**
 - P0: Settings loader and precedence (`mbe.toml`, env vars) for commands/modules/scratch/queue hints.
@@ -48,7 +48,7 @@ scheduler_account = "proj123"
 ```
 
 ---
-# mbe-tools (v0.1.1)
+# mbe-tools (v0.1.3)
 
 `mbe-tools` is a Python toolkit for the **Many-Body Expansion (MBE)** workflow:
 
@@ -57,7 +57,7 @@ scheduler_account = "proj123"
 - Parsing: read ORCA/Q-Chem outputs, auto-detect program, infer method/basis/grid metadata, emit JSONL.
 - Analysis: inclusion–exclusion MBE(k), summaries, CSV/Excel export, and quick plots.
 
-Status: **v0.1.1 (MVP)** — backend syntax (e.g., ghost atoms) can be customized per site. License: **MIT**.
+Status: **v0.1.3 (MVP)** — backend syntax (e.g., ghost atoms) can be customized per site. License: **MIT**.
 
 ---
 

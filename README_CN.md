@@ -1,4 +1,4 @@
-# mbe-tools (v0.1.1)
+# mbe-tools (v0.1.3)
 
 `mbe-tools` 覆盖 Many-Body Expansion (MBE) 工作流：
 
@@ -7,7 +7,7 @@
 - 解析：读取 ORCA/Q-Chem 输出，自动识别程序，基于路径或伴随输入推断 method/basis/grid，写出 JSONL。
 - 分析：包含–排除 MBE(k)，汇总，CSV/Excel 导出与简单绘图。
 
-当前状态：**v0.1.1 (MVP)**，站点相关的 ghost 原子等语法可按需在 backend 中调整。许可证：**MIT**。
+当前状态：**v0.1.3 (MVP)**，站点相关的 ghost 原子等语法可按需在 backend 中调整。许可证：**MIT**。
 
 ---
 
