@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mbe-tools"
+version = "0.1.0"
+description = "A practical toolkit for Many-Body Expansion (MBE) workflows: cluster design, MBE input generation, output parsing, and analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name="Jiarui Wang"}]
+dependencies = [
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+analysis = ["pandas>=2.0", "openpyxl>=3.1", "matplotlib>=3.8"]
+cli = ["typer>=0.12", "rich>=13.7"]
+
+[project.scripts]
+mbe = "mbe_tools.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mbe_tools"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
