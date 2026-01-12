@@ -1,0 +1,26 @@
+# python
+__pycache__/
+*.pyc
+
+# venv
+.venv/
+
+# macOS
+.DS_Store
+
+# outputs
+*.out
+*.log
+*.tmp
+scratch/
+
+# local docs (do not track)
+MBE_TOOLS_DESIGN_EN.md
+REPORT_P0_P5.md
+TEST_PLAN.md
+TODO.md
+
+# build artifacts
+dist/
+
+.DS_Store
