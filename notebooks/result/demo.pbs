@@ -29,7 +29,7 @@ while (( start < ${#files[@]} )); do
 #!/bin/bash
 #PBS -j oe
 #PBS -N ${jobname}
-#PBS -l walltime=${walltime},mem=${MEM},ncpus=${NCPUS}
+#PBS -l walltime=${WALLTIME},mem=${MEM},ncpus=${NCPUS}
 #PBS -o ${jobname}.log
 
 cd "${PBS_O_WORKDIR:-.}"
