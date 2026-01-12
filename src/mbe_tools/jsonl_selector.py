@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Iterable, Optional, Callable
+from typing import Optional, Callable
 
 
 def _safe_mtime(p: Path) -> float:
