@@ -1,6 +1,6 @@
 """mbe-tools: Many-Body Expansion workflow toolkit."""
 
-DEFAULT_VERSION = "0.2.0-dev"
+DEFAULT_VERSION = "0.2.0"
 
 try:  # pragma: no cover - defensive import
 	from importlib.metadata import version, PackageNotFoundError  # type: ignore

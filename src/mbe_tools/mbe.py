@@ -76,10 +76,9 @@ def generate_subsets_xyz(
                 for atom in frag_atoms[fi]:
                     lines.append(backend.format_atom(atom, ghost=is_ghost))
 
-            # deterministic job id, include human-readable indices (1-based) plus hash suffix
+            # deterministic job id, include human-readable indices (1-based); hash not needed
             subset_str = ".".join(str(i + 1) for i in subset)
-            h = hashlib.md5(("k="+str(k)+";"+"-".join(map(str, subset))).encode()).hexdigest()[:8]
-            job_id = f"{params.backend}_k{k}_{subset_str}_{h}"
+            job_id = f"{params.backend}_k{k}_{subset_str}"
             geom = "\n".join(lines)
             yield job_id, subset, geom
 

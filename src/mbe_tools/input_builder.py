@@ -31,9 +31,9 @@ def render_qchem_input(
         f"  basis         {basis}",
     ]
     if thresh is not None:
-        lines.append(f"  thresh        {thresh}")
+        lines.append(f"  thresh        {thresh:g}")
     if tole is not None:
-        lines.append(f"  tole          {tole}")
+        lines.append(f"  tole          {tole:g}")
     if scf_convergence is not None:
         lines.append(f"  scf_convergence {scf_convergence}")
     if rem_extra:

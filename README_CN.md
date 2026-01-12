@@ -1,4 +1,4 @@
-# mbe-tools (v0.2.0-dev)
+# mbe-tools
 
 `mbe-tools` 覆盖 Many-Body Expansion (MBE) 工作流：
 
@@ -7,15 +7,7 @@
 - 解析：读取 ORCA/Q-Chem 输出，自动识别程序，基于路径或伴随输入推断 method/basis/grid，写出 JSONL。
 - 分析：包含–排除 MBE(k)，汇总，CSV/Excel 导出与简单绘图。
 
-当前状态：**v0.2.0-dev**，站点相关的 ghost 原子等语法可按需在 backend 中调整。许可证：**MIT**。
-
-## v0.2.0 新增（CLI）
-
-- 默认 JSONL 选择：显式 → run.jsonl → parsed.jsonl → 唯一 *.jsonl → 最新；`analyze/show/info/calc/save/compare` 复用。
-- 新命令：`mbe show`、`mbe info`、`mbe calc`、`mbe save`、`mbe compare`，用于快速汇总、能量表、归档和多次运行对比。
-- 几何嵌入：解析时可用 `--cluster-xyz` 强制几何，或用 `--geom-mode/--geom-source/--geom-drop-ghost/--nosearch` 搜索输出提取单体几何。
-
----
+当前状态：**v0.2.0 release**；站点相关的 ghost 原子等语法可按需在 backend 中调整。许可证：**MIT**。
 
 ## 安装（开发模式）
 
@@ -109,11 +101,11 @@ mbe analyze parsed.jsonl --to-csv results.csv --to-xlsx results.xlsx --plot mbe.
 - `mbe template`：PBS/Slurm 脚本（含 run-control）。通用：`--scheduler`，`--backend`，`--job-name`，`--walltime`，`--mem-gb`，`--chunk-size`，`--module`，`--command`，`--out`；PBS+qchem 另有 `--ncpus`，`--queue`，`--project`；Slurm+orca 另有 `--ncpus`(cpus-per-task)，`--ntasks`，`--partition`，`--project`(account)，`--qos`；`--wrapper` 会生成可直接 `bash job.sh` 的提交脚本，内部写入隐藏的 `._*.pbs/.sbatch` 并调用 qsub/sbatch。
 - `mbe parse <root>`：解析输出 → JSONL。参数：`--program [auto|qchem|orca]`，`--glob-pattern`，`--out`，`--infer-metadata`，几何搜索控制：`--cluster-xyz`，`--geom-mode first|last`，`--geom-source singleton|any`，`--geom-max-lines`，`--geom-drop-ghost`，`--nosearch`。
 - `mbe analyze <parsed.jsonl>`：汇总/导出。参数：`--to-csv`，`--to-xlsx`，`--plot`，`--scheme [simple|strict]`，`--max-order`。
-- `mbe show <jsonl>`：快速查看簇/CPU/能量，支持 `--monomer N` 打印单体几何。
-- `mbe info <jsonl>`：覆盖率 + CPU 汇总（默认 JSONL 选择）。
-- `mbe calc <jsonl>`：CPU 总和 + MBE 能量（simple/strict），支持 `--unit hartree|kcal|kj`、`--to/--from`、`--monomer`，并检测混合 method/basis/grid/cp。
-- `mbe save <jsonl>`：归档 JSONL 到 `cluster_id/时间戳/`。
-- `mbe compare <dir|glob>`：多 JSONL 比对，可用 `--cluster` 过滤。
+- `mbe show <jsonl>`：快速查看簇/CPU/能量，附严格 MBE(k) 总能量与逐阶 ΔE，支持 `--monomer N` 打印单体几何（默认 JSONL 选择）。
+- `mbe info <jsonl>`：覆盖率 + CPU 汇总；支持 `--program/method/basis/grid/cp/status` 过滤，`--scheme`，`--max-order`，`--json`。
+- `mbe calc <jsonl>`：CPU 总和 + MBE 能量（simple/strict），`--unit hartree|kcal|kj`，`--to/--from`，`--monomer`，`--interaction i,j[,k]`（相互作用能 ΔE = E 子集 − 单体和，0 基索引，可重复），检测混合 method/basis/grid/cp。
+- `mbe save <jsonl>`：归档 JSONL 到 `cluster_id/时间戳/`；`--dest`/`--order`/`--no-include-energy` 控制目的地与内容。
+- `mbe compare <dir|glob>`：多 JSONL 比对；`--cluster` 过滤；`--scheme simple|strict`，`--order`，`--ref latest|first|PATH` 设参考，输出 ΔCPU/ΔE 相对参考。
 
 使用 `mbe <command> --help` 查看完整参数。
 
@@ -126,9 +118,9 @@ mbe analyze parsed.jsonl --to-csv results.csv --to-xlsx results.xlsx --plot mbe.
 | CLI  | `mbe template`               | 生成 PBS/Slurm 脚本（含 run-control）                                                                                                          | 公共：`--scheduler pbs/slurm`，`--backend qchem/orca`，`--job-name`，`--walltime`，`--mem-gb`，`--chunk-size`，`--module`，`--command`，`--out`; PBS: `--ncpus`，`--queue`，`--project`; Slurm: `--ncpus`(cpus-per-task)，`--ntasks`，`--partition`，`--project`(account)，`--qos`; `--wrapper` | `--wrapper` 产出可直接 `bash job.sh` 的提交器，内部写隐藏 `._*.pbs/.sbatch` 再 qsub/sbatch                      | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L101-L169) → [src/mbe_tools/hpc_templates.py](src/mbe_tools/hpc_templates.py) |
 | CLI  | `mbe parse <root>`           | 解析 Q-Chem/ORCA 输出为 JSONL                                                                                                                  | `--program auto/qchem/orca`，`--glob-pattern`，`--out`，`--infer-metadata`，`--cluster-xyz`，`--nosearch`，`--geom-mode first/last`，`--geom-source singleton/any`，`--geom-drop-ghost`，`--geom-max-lines` | 可嵌入簇几何；从文件名与伴随输入推断 method/basis/grid                                                            | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L553-L716) → [src/mbe_tools/parsers/io.py](src/mbe_tools/parsers/io.py)       |
 | CLI  | `mbe analyze <parsed.jsonl>` | 汇总/导出/绘图                                                                                                                                 | `--to-csv`，`--to-xlsx`，`--plot`，`--scheme simple/strict`，`--max-order`                                                                         | `strict` 用包含–排除；`simple` 计算相对单体均值的 ΔE                                                                                                                                                                                            | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L717-L783) → [src/mbe_tools/analysis.py](src/mbe_tools/analysis.py) |
-| CLI  | `mbe show <jsonl>`           | 快速查看簇/CPU/能量                                                                                                                           | 可选 `--monomer N` 打印单体几何                                                                                                                                                                           | 复用默认 JSONL 选择                                                               | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L288-L357) |
+| CLI  | `mbe show <jsonl>`           | 快速查看簇/CPU/能量，并给出严格 MBE(k) 总能量与逐阶 ΔE                                                                                        | 可选 `--monomer N` 打印单体几何                                                                                                                                                                           | 复用默认 JSONL 选择；打印包含–排除 MBE 行                                        | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L288-L357) |
 | CLI  | `mbe info <jsonl>`           | 覆盖率 + CPU 汇总                                                                                                                             | 默认 JSONL 选择                                                                                                                                                                                           | 按 subset_size 统计状态                                                                        | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L359-L387) |
-| CLI  | `mbe calc <jsonl>`           | CPU 总和 + MBE 能量（simple/strict）                                                                                                          | `--scheme simple/strict`，`--to`，`--from`，`--monomer`，`--unit hartree/kcal/kj`                                                                                                                        | 检测混合 program/method/basis/grid/cp 组合                                                        | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L389-L474) |
+| CLI  | `mbe calc <jsonl>`           | CPU 总和 + MBE 能量（simple/strict）并输出子集相互作用能 ΔE（相对单体和）                                                                      | `--scheme simple/strict`，`--to`，`--from`，`--monomer`，`--unit hartree/kcal/kj`，`--interaction i,j[,k]`                                                                                               | 检测混合 program/method/basis/grid/cp 组合                                                        | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L389-L474) |
 | CLI  | `mbe save <jsonl>`           | 归档 JSONL 到时间戳目录                                                                                                                      | `--dest DIR`                                                                                                                                                                                                | 使用 cluster_id/时间戳 子目录                                                               | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L476-L505) |
 | CLI  | `mbe compare <dir|glob>`     | 多 JSONL 结果对比                                                                                                                            | 可选 `--cluster ID` 过滤                                                                                                                                                                                  | 列出 cpu_ok、记录数、组合标签                                                      | [src/mbe_tools/cli.py](src/mbe_tools/cli.py#L507-L551) |
 | API  | 簇与片段                     | `read_xyz`，`write_xyz`，`fragment_by_water_heuristic`，`fragment_by_connectivity`，`sample_fragments`，`spatial_sample_fragments`             | 参见函数参数：切距、缩放、seed 等                                                                                                                                                         | 支持保留离子和特殊片段优先                                                                     | [src/mbe_tools/cluster.py](src/mbe_tools/cluster.py)                                                                                                                                                                                            |
@@ -204,6 +196,10 @@ JSON 输出中的 `subset_indices` 始终为 0-based。
 ## Notebook
 
 `notebooks/sample_walkthrough.ipynb` 展示端到端示例：构建输入、生成模板、用合成数据组装 MBE(k)。
+
+## 贡献与联系
+
+欢迎提交 Issue 或 Pull Request；如有问题或合作意向，可邮件联系 Jiarui Wang：Jiarui.Wang4@unsw.edu.au。
 
 ## 许可证
 
