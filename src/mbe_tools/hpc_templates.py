@@ -287,8 +287,123 @@ def render_pbs_qchem(
     module: str = "qchem/5.2.2",
     input_glob: str = "*.inp",
     chunk_size: Optional[int] = None,
+    wrapper: bool = False,
 ) -> str:
     mem_mb = int(mem_gb * 1000)
+    if wrapper and chunk_size and chunk_size > 0:
+        lines = [
+            "#!/bin/bash",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "",
+            f"JOB_NAME=${{JOB_NAME:-{job_name}}}",
+            f"WALLTIME=${{WALLTIME:-{walltime}}}",
+            f"MEM_MB=${{MEM_MB:-{mem_mb}}}",
+            f"NCPUS=${{NCPUS:-{ncpus}}}",
+            f"QUEUE=${{QUEUE:-{queue or ''}}}",
+            f"PROJECT=${{PROJECT:-{project or ''}}}",
+            f"QC_MOD=${{QC_MOD:-{module}}}",
+            f"FILES_PER_JOB=${{FILES_PER_JOB:-{chunk_size}}}",
+            f"FILES=( {input_glob} )",
+            "if ((${#FILES[@]} == 0)); then echo '[ERR] no inputs'; exit 1; fi",
+            "job_index=0",
+            "start=0",
+            "while (( start < ${#FILES[@]} )); do",
+            "  job_index=$(( job_index + 1 ))",
+            "  chunk=()",
+            "  end=$(( start + FILES_PER_JOB ))",
+            "  if (( end > ${#FILES[@]} )); then end=${#FILES[@]}; fi",
+            "  for (( i=start; i<end; i++ )); do chunk+=( \"${FILES[i]}\" ); done",
+            "  jobname=\"${JOB_NAME}_${job_index}\"",
+            "  pbsfile=\"._${jobname}.pbs\"",
+            "  cat > \"${pbsfile}\" <<EOF",
+            "#!/bin/bash",
+            "#PBS -j oe",
+            "#PBS -N ${jobname}",
+            "#PBS -l walltime=${WALLTIME},mem=${MEM_MB}Mb,ncpus=${NCPUS}",
+            "#PBS -o ${jobname}.log",
+        ]
+        if queue:
+            lines.append("#PBS -q ${QUEUE}")
+        if project:
+            lines.append("#PBS -P ${PROJECT}")
+        lines += [
+            "",
+            "cd \"${PBS_O_WORKDIR:-.}\"",
+            "export TMPDIR=${TMPDIR:-/tmp}",
+            "module load ${QC_MOD}",
+            "files_to_run=( ${chunk[@]} )",
+            "NCPUS=${NCPUS}",
+            "# Default command: qchem -np ${NCPUS}",
+            *_run_with_control_block("qchem", "QC_CMD", "NCPUS", "qchem"),
+            "for f in \"${files_to_run[@]}\"; do",
+            "  [ -f \"$f\" ] || continue",
+            "  run_with_control \"$f\"",
+            "done",
+            "EOF",
+            "  qsub \"${pbsfile}\"",
+            "  start=$end",
+            "done",
+            "",
+            "echo \"[OK] submitted $job_index PBS jobs\"",
+        ]
+        return "\n".join(lines) + "\n"
+
+    if wrapper and not chunk_size:
+        lines = [
+            "#!/bin/bash",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "",
+            f"JOB_NAME=${{JOB_NAME:-{job_name}}}",
+            f"WALLTIME=${{WALLTIME:-{walltime}}}",
+            f"MEM_MB=${{MEM_MB:-{mem_mb}}}",
+            f"NCPUS=${{NCPUS:-{ncpus}}}",
+            f"QUEUE=${{QUEUE:-{queue or ''}}}",
+            f"PROJECT=${{PROJECT:-{project or ''}}}",
+            f"QC_MOD=${{QC_MOD:-{module}}}",
+            f"PBSFILE=${{PBSFILE:-._{job_name}.pbs}}",
+            "",
+            "cat > \"${PBSFILE}\" <<'EOF'",
+            "#!/bin/bash",
+            "#PBS -N ${JOB_NAME}",
+            "#PBS -l walltime=${WALLTIME},mem=${MEM_MB}Mb,ncpus=${NCPUS}",
+            "#PBS -j oe",
+            "#PBS -o ${JOB_NAME}.log",
+        ]
+        if queue:
+            lines.append("#PBS -q ${QUEUE}")
+        if project:
+            lines.append("#PBS -P ${PROJECT}")
+        lines += [
+            "",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "cd \"${PBS_O_WORKDIR:-.}\"",
+            "export TMPDIR=${TMPDIR:-/tmp}",
+            "module load ${QC_MOD}",
+            "",
+            "NCPUS=${NCPUS}",
+            "# Default command: qchem -np ${NCPUS}",
+        ]
+        lines += _run_with_control_block("qchem", "QC_CMD", "NCPUS", "qchem")
+        lines += [
+            f"files=( {input_glob} )",
+            "if ((${#files[@]} == 0)); then echo '[ERR] no inputs'; exit 1; fi",
+            "",
+            "for f in \"${files[@]}\"; do",
+            "  [ -f \"$f\" ] || continue",
+            "  run_with_control \"$f\"",
+            "done",
+            "",
+            "echo \"[OK] all done\"",
+            "EOF",
+            "",
+            "qsub \"${PBSFILE}\"",
+            "echo \"[OK] submitted ${PBSFILE}\"",
+        ]
+        return "\n".join(lines) + "\n"
+
     if chunk_size and chunk_size > 0:
         lines = [
             "#!/bin/bash",
@@ -410,8 +525,136 @@ def render_slurm_orca(
     command: str = "orca",
     input_glob: str = "*.inp",
     chunk_size: Optional[int] = None,
+    wrapper: bool = False,
 ) -> str:
     mem_spec = f"{mem_gb:.2f}GB" if mem_gb % 1 else f"{int(mem_gb)}GB"
+    if wrapper and chunk_size and chunk_size > 0:
+        lines = [
+            "#!/bin/bash",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "",
+            f"JOB_NAME=${{JOB_NAME:-{job_name}}}",
+            f"WALLTIME=${{WALLTIME:-{walltime}}}",
+            f"NTASKS=${{NTASKS:-{ntasks}}}",
+            f"CPUS_PER_TASK=${{CPUS_PER_TASK:-{cpus_per_task}}}",
+            f"MEM_SPEC=${{MEM_SPEC:-{mem_spec}}}",
+            f"PARTITION=${{PARTITION:-{partition or ''}}}",
+            f"ACCOUNT=${{ACCOUNT:-{account or ''}}}",
+            f"QOS=${{QOS:-{qos or ''}}}",
+            f"ORCA_MOD=${{ORCA_MOD:-{module}}}",
+            f"ORCA_CMD=${{ORCA_CMD:-{command}}}",
+            f"FILES_PER_JOB=${{FILES_PER_JOB:-{chunk_size}}}",
+            f"FILES=( {input_glob} )",
+            "if ((${#FILES[@]} == 0)); then echo '[ERR] no inputs'; exit 1; fi",
+            "job_index=0",
+            "start=0",
+            "while (( start < ${#FILES[@]} )); do",
+            "  job_index=$(( job_index + 1 ))",
+            "  chunk=()",
+            "  end=$(( start + FILES_PER_JOB ))",
+            "  if (( end > ${#FILES[@]} )); then end=${#FILES[@]}; fi",
+            "  for (( i=start; i<end; i++ )); do chunk+=( \"${FILES[i]}\" ); done",
+            "  jobname=\"${JOB_NAME}_${job_index}\"",
+            "  sbfile=\"._${jobname}.sbatch\"",
+            "  cat > \"${sbfile}\" <<EOF",
+            "#!/bin/bash",
+            "#SBATCH --job-name=${jobname}",
+            "#SBATCH --time=${WALLTIME}",
+            "#SBATCH --ntasks=${NTASKS}",
+            "#SBATCH --cpus-per-task=${CPUS_PER_TASK}",
+            "#SBATCH --mem=${MEM_SPEC}",
+        ]
+        if partition:
+            lines.append("#SBATCH --partition=${PARTITION}")
+        if account:
+            lines.append("#SBATCH --account=${ACCOUNT}")
+        if qos:
+            lines.append("#SBATCH --qos=${QOS}")
+        lines += [
+            "#SBATCH --output=${jobname}.%j.out",
+            "#SBATCH --error=${jobname}.%j.err",
+            "",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "module load ${ORCA_MOD}",
+            "export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-${CPUS_PER_TASK}}",
+            "files_to_run=( ${chunk[@]} )",
+            *_run_with_control_block("orca", "ORCA_CMD", "CPUS_PER_TASK", command),
+            "for f in \"${files_to_run[@]}\"; do",
+            "  [ -f \"$f\" ] || continue",
+            "  run_with_control \"$f\"",
+            "done",
+            "EOF",
+            "  sbatch \"${sbfile}\"",
+            "  start=$end",
+            "done",
+            "",
+            "echo \"[OK] submitted $job_index Slurm jobs\"",
+        ]
+        return "\n".join(lines) + "\n"
+
+    if wrapper and not chunk_size:
+        lines = [
+            "#!/bin/bash",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "",
+            f"JOB_NAME=${{JOB_NAME:-{job_name}}}",
+            f"WALLTIME=${{WALLTIME:-{walltime}}}",
+            f"NTASKS=${{NTASKS:-{ntasks}}}",
+            f"CPUS_PER_TASK=${{CPUS_PER_TASK:-{cpus_per_task}}}",
+            f"MEM_SPEC=${{MEM_SPEC:-{mem_spec}}}",
+            f"PARTITION=${{PARTITION:-{partition or ''}}}",
+            f"ACCOUNT=${{ACCOUNT:-{account or ''}}}",
+            f"QOS=${{QOS:-{qos or ''}}}",
+            f"ORCA_MOD=${{ORCA_MOD:-{module}}}",
+            f"ORCA_CMD=${{ORCA_CMD:-{command}}}",
+            f"SBFILE=${{SBFILE:-._{job_name}.sbatch}}",
+            "",
+            "cat > \"${SBFILE}\" <<'EOF'",
+            "#!/bin/bash",
+            "#SBATCH --job-name=${JOB_NAME}",
+            "#SBATCH --time=${WALLTIME}",
+            "#SBATCH --ntasks=${NTASKS}",
+            "#SBATCH --cpus-per-task=${CPUS_PER_TASK}",
+            "#SBATCH --mem=${MEM_SPEC}",
+        ]
+        if partition:
+            lines.append("#SBATCH --partition=${PARTITION}")
+        if account:
+            lines.append("#SBATCH --account=${ACCOUNT}")
+        if qos:
+            lines.append("#SBATCH --qos=${QOS}")
+        lines += [
+            "#SBATCH --output=${JOB_NAME}.%j.out",
+            "#SBATCH --error=${JOB_NAME}.%j.err",
+            "",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "module load ${ORCA_MOD}",
+            "export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-${CPUS_PER_TASK}}",
+            "",
+            "CPUS_PER_TASK=${CPUS_PER_TASK}",
+        ]
+        lines += _run_with_control_block("orca", "ORCA_CMD", "CPUS_PER_TASK", command)
+        lines += [
+            f"files=( {input_glob} )",
+            "if ((${#files[@]} == 0)); then echo '[ERR] no inputs'; exit 1; fi",
+            "",
+            "for f in \"${files[@]}\"; do",
+            "  [ -f \"$f\" ] || continue",
+            "  run_with_control \"$f\"",
+            "done",
+            "",
+            "echo \"[OK] all done\"",
+            "EOF",
+            "",
+            "sbatch \"${SBFILE}\"",
+            "echo \"[OK] submitted ${SBFILE}\"",
+        ]
+        return "\n".join(lines) + "\n"
+
     if chunk_size and chunk_size > 0:
         lines = [
             "#!/bin/bash",

@@ -1,14 +1,16 @@
 """mbe-tools: Many-Body Expansion workflow toolkit."""
 
+DEFAULT_VERSION = "0.2.0-dev"
+
 try:  # pragma: no cover - defensive import
 	from importlib.metadata import version, PackageNotFoundError  # type: ignore
 
 	try:
 		__version__ = version("mbe-tools")
 	except PackageNotFoundError:
-		__version__ = "0.0.0"
+		__version__ = DEFAULT_VERSION
 except Exception:  # pragma: no cover - keep import cheap
-	__version__ = "0.0.0"
+	__version__ = DEFAULT_VERSION
 
 from .cluster import (
 	read_xyz,
