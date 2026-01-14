@@ -74,10 +74,10 @@ mbe build-input water.geom --backend qchem --method wb97m-v --basis def2-ma-qzvp
 mbe build-input water.geom --backend orca  --method wb97m-v --basis def2-ma-qzvpp --out water_orca.inp
 ```
 
-5) 生成 PBS/Slurm 模板（含 run-control）
+5) 生成 PBS/Slurm 模板（含 run-control；PBS 支持 local-run）
 
 ```bash
-mbe template --scheduler pbs   --backend qchem --job-name mbe-qchem --chunk-size 20 --out qchem.pbs
+mbe template --scheduler pbs   --backend qchem --job-name mbe-qchem --chunk-size 20 --local-run --builtin-control --out qchem.run
 mbe template --scheduler slurm --backend orca  --job-name mbe-orca  --partition work --chunk-size 10 --out orca.sbatch
 ```
 
@@ -96,10 +96,12 @@ mbe analyze parsed.jsonl --to-csv results.csv --to-xlsx results.xlsx --plot mbe.
 ## CLI 速查
 
 - `mbe fragment <xyz>`：水启发式拆分+抽样 → XYZ。参数：`--out-xyz [sample.xyz]`，`--n`，`--seed`，`--require-ion`，`--mode [random|spatial]`，空间模式额外 `--prefer-special`，`--k-neighbors`，`--start-index`，`--oh-cutoff`。
-- `mbe gen <xyz>`：生成子集几何。参数：`--out-dir [mbe_geoms]`，`--max-order [2]`，`--order/--orders`，`--cp/--no-cp`，`--scheme`，`--backend [qchem|orca]`，`--oh-cutoff`。
-- `mbe build-input <geom>`：渲染 Q-Chem/ORCA 输入。参数：后端、必填 `--method`/`--basis`、电荷/多重度，Q-Chem (`--thresh`/`--tole`/`--scf-convergence`/`--rem-extra`)，ORCA (`--grid`/`--scf-convergence`/`--keyword-line-extra`)，`--out`；批量：让 `geom` 指向目录并加 `--glob "*.geom" --out-dir 输出目录` 可一次生成多份。
-- `mbe template`：PBS/Slurm 脚本（含 run-control）。通用：`--scheduler`，`--backend`，`--job-name`，`--walltime`，`--mem-gb`，`--chunk-size`，`--module`，`--command`，`--out`；PBS+qchem 另有 `--ncpus`，`--queue`，`--project`；Slurm+orca 另有 `--ncpus`(cpus-per-task)，`--ntasks`，`--partition`，`--project`(account)，`--qos`；`--wrapper` 会生成可直接 `bash job.sh` 的提交脚本，内部写入隐藏的 `._*.pbs/.sbatch` 并调用 qsub/sbatch。
-- `mbe parse <root>`：解析输出 → JSONL。参数：`--program [auto|qchem|orca]`，`--glob-pattern`，`--out`，`--infer-metadata`，几何搜索控制：`--cluster-xyz`，`--geom-mode first|last`，`--geom-source singleton|any`，`--geom-max-lines`，`--geom-drop-ghost`，`--nosearch`。
+- `mbe gen <xyz>`：生成子集几何。参数：`--out-dir [mbe_geoms]`，`--max-order [2]`，`--order/--orders`，`--cp/--no-cp`，`--scheme`，`--backend [qchem|orca]`，`--oh-cutoff`；`--monomers-dir DIR` 配合 `--monomer-glob "*.geom"` 可直接用已有单体 `.geom` 拼装子集（跳过碎裂）。
+- `mbe gen_from_monomer <dir>`：直接从单体 `.geom` 生成子集，参数同上 monomer 模式：`--order/--orders` / `--max-order`，`--cp/--no-cp`，`--scheme`，`--backend`，`--monomer-glob`，`--out-dir`，`--cluster-name`。
+- `mbe build-input <geom>`：渲染 Q-Chem/ORCA 输入。参数：后端、必填 `--method`/`--basis`、电荷/多重度，Q-Chem (`--thresh`/`--tole`/`--scf-convergence`/`--xc-grid`/`--rem-extra`)，ORCA (`--grid`/`--scf-convergence`/`--keyword-line-extra`)，`--out`；批量：让 `geom` 指向目录并加 `--glob "*.geom" --out-dir 输出目录` 可一次生成多份。
+- `mbe template`：PBS/Slurm 脚本（含 run-control）。通用：`--scheduler`，`--backend`，`--job-name`，`--walltime`，`--mem-gb`，`--chunk-size`，`--module`，`--command`，`--out`；PBS+qchem 另有 `--ncpus`，`--queue`，`--project`，`--local-run`（本地运行 bash runner），`--control-file`（外部 TOML），`--builtin-control`（写默认控制文件）；Slurm+orca 另有 `--ncpus`(cpus-per-task)，`--ntasks`，`--partition`，`--project`(account)，`--qos`；`--wrapper` 会生成可直接 `bash job.sh` 的提交脚本，内部写入隐藏的 `._*.pbs/.sbatch` 并调用 qsub/sbatch。
+- `mbe parse <root>`：解析输出 → JSONL。参数：`--program [qchem|orca|auto]`（默认 qchem），`--glob-pattern`，`--out`，`--infer-metadata`，几何搜索控制：`--cluster-xyz`，`--geom-mode first|last`，`--geom-source singleton|any`，`--geom-max-lines`，`--geom-drop-ghost`，`--nosearch`。
+- `mbe where`：打印默认 data/config/cache/state 与 runs 目录。
 - `mbe analyze <parsed.jsonl>`：汇总/导出。参数：`--to-csv`，`--to-xlsx`，`--plot`，`--scheme [simple|strict]`，`--max-order`。
 - `mbe show <jsonl>`：快速查看簇/CPU/能量，附严格 MBE(k) 总能量与逐阶 ΔE，支持 `--monomer N` 打印单体几何（默认 JSONL 选择）。
 - `mbe info <jsonl>`：覆盖率 + CPU 汇总；支持 `--program/method/basis/grid/cp/status` 过滤，`--scheme`，`--max-order`，`--json`。
@@ -132,19 +134,19 @@ mbe analyze parsed.jsonl --to-csv results.csv --to-xlsx results.xlsx --plot mbe.
 
 ### CLI 详表与示例
 
-| 命令                     | 参数/选项                                                         | 说明                                | 示例                                                     |
-| ------------------------ | ----------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
-| `mbe fragment <xyz>`     | `--mode random/spatial`，`--n`，`--require-ion`                   | 抽样片段并写出 XYZ                  | `mbe fragment water3.xyz --mode spatial --n 2`           |
-| `mbe gen <xyz>`          | `--max-order`，`--order`，`--cp/--no-cp`                          | 生成子集几何                        | `mbe gen big.xyz --max-order 3 --out-dir geoms`          |
-| `mbe build-input <geom>` | `--backend qchem/orca`，`--method`，`--basis`                     | 从 geom 渲染 Q-Chem/ORCA 输入       | `mbe build-input frag.geom --backend qchem --out a.inp`  |
-| `mbe template`           | `--scheduler pbs/slurm`，`--backend`，`--wrapper`                 | 生成 PBS/Slurm 脚本（可带 wrapper） | `mbe template --scheduler pbs --backend qchem --wrapper` |
-| `mbe parse <root>`       | `--program auto/qchem/orca`，`--glob-pattern`，几何搜索参数       | 解析输出为 JSONL，可嵌入簇几何      | `mbe parse ./Output --glob "*.out" --geom-source any`    |
-| `mbe analyze <jsonl>`    | `--scheme simple/strict`，`--to-csv`，`--plot`                    | 汇总、导出、绘图                    | `mbe analyze parsed.jsonl --scheme strict`               |
-| `mbe show <jsonl>`       | 可选 `--monomer N`                                                | 快速查看簇/CPU/能量                 | `mbe show parsed.jsonl --monomer 0`                      |
-| `mbe info <jsonl>`       | 默认 JSONL 选择                                                   | 覆盖率 + CPU 汇总                   | `mbe info`                                               |
-| `mbe calc <jsonl>`       | `--scheme simple/strict`，`--unit hartree/kcal/kj`，`--to/--from` | CPU 总和 + MBE 能量                 | `mbe calc parsed.jsonl --scheme strict --unit kcal`      |
-| `mbe save <jsonl>`       | `--dest DIR`                                                      | 按 cluster_id/时间戳 归档 JSONL     | `mbe save parsed.jsonl --dest runs/`                     |
-| `mbe compare <dir\|glob>` | `--cluster ID`                                                   | 多 JSONL 结果对比                   | `mbe compare runs/**/*.jsonl --cluster water20`          |
+| 命令                      | 参数/选项                                                         | 说明                                | 示例                                                     |
+| ------------------------- | ----------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `mbe fragment <xyz>`      | `--mode random/spatial`，`--n`，`--require-ion`                   | 抽样片段并写出 XYZ                  | `mbe fragment water3.xyz --mode spatial --n 2`           |
+| `mbe gen <xyz>`           | `--max-order`，`--order`，`--cp/--no-cp`                          | 生成子集几何                        | `mbe gen big.xyz --max-order 3 --out-dir geoms`          |
+| `mbe build-input <geom>`  | `--backend qchem/orca`，`--method`，`--basis`                     | 从 geom 渲染 Q-Chem/ORCA 输入       | `mbe build-input frag.geom --backend qchem --out a.inp`  |
+| `mbe template`            | `--scheduler pbs/slurm`，`--backend`，`--wrapper`                 | 生成 PBS/Slurm 脚本（可带 wrapper） | `mbe template --scheduler pbs --backend qchem --wrapper` |
+| `mbe parse <root>`        | `--program auto/qchem/orca`，`--glob-pattern`，几何搜索参数       | 解析输出为 JSONL，可嵌入簇几何      | `mbe parse ./Output --glob "*.out" --geom-source any`    |
+| `mbe analyze <jsonl>`     | `--scheme simple/strict`，`--to-csv`，`--plot`                    | 汇总、导出、绘图                    | `mbe analyze parsed.jsonl --scheme strict`               |
+| `mbe show <jsonl>`        | 可选 `--monomer N`                                                | 快速查看簇/CPU/能量                 | `mbe show parsed.jsonl --monomer 0`                      |
+| `mbe info <jsonl>`        | 默认 JSONL 选择                                                   | 覆盖率 + CPU 汇总                   | `mbe info`                                               |
+| `mbe calc <jsonl>`        | `--scheme simple/strict`，`--unit hartree/kcal/kj`，`--to/--from` | CPU 总和 + MBE 能量                 | `mbe calc parsed.jsonl --scheme strict --unit kcal`      |
+| `mbe save <jsonl>`        | `--dest DIR`                                                      | 按 cluster_id/时间戳 归档 JSONL     | `mbe save parsed.jsonl --dest runs/`                     |
+| `mbe compare <dir\|glob>` | `--cluster ID`                                                    | 多 JSONL 结果对比                   | `mbe compare runs/**/*.jsonl --cluster water20`          |
 
 ## Run-control（模板）
 

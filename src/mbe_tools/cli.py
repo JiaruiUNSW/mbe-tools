@@ -42,8 +42,6 @@ def _library_config_path() -> Path:
     paths = _xdg_paths()
     paths["config"].mkdir(parents=True, exist_ok=True)
     return paths["config"] / "library_path.txt"
-
-
 def _resolve_library_root(dest: Optional[str]) -> Path:
     """Resolve the base directory for saved runs.
 
@@ -71,6 +69,36 @@ def _resolve_library_root(dest: Optional[str]) -> Path:
             pass
 
     return default_runs
+
+
+def _load_fragments_from_monomer_dir(root: Path, pattern: str) -> List[List[Atom]]:
+    paths = sorted(root.glob(pattern))
+    if not paths:
+        raise typer.BadParameter(f"No monomer geoms match '{pattern}' under {root}")
+
+    def _read_fragment_from_geom(path: Path) -> List[Atom]:
+        atoms: List[Atom] = []
+        with path.open("r", encoding="utf-8") as f:
+            for ln in f:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                parts = ln.split()
+                if len(parts) < 4:
+                    continue
+                el = parts[0].lstrip("@")
+                if not el:
+                    continue
+                try:
+                    x, y, z = map(float, parts[1:4])
+                except ValueError as e:
+                    raise typer.BadParameter(f"Invalid coord line in {path}: {ln}") from e
+                atoms.append(Atom(el, x, y, z))
+        if not atoms:
+            raise typer.BadParameter(f"Monomer geom {path} yielded no atoms")
+        return atoms
+
+    return [_read_fragment_from_geom(p) for p in paths]
 
 
 @app.callback(invoke_without_command=True)
@@ -141,26 +169,79 @@ def gen(
     scheme: str = typer.Option("mbe", help="MBE scheme/type label"),
     backend: str = typer.Option("qchem", help="Backend formatting: qchem/orca"),
     oh_cutoff: float = typer.Option(1.25, help="O-H cutoff for water heuristic fragmentation (A)"),
+    monomers_dir: Optional[str] = typer.Option(None, help="Directory of monomer .geom files to assemble higher-order subsets"),
+    monomer_glob: str = typer.Option("*.geom", help="Glob to select monomer .geom files (used with --monomers-dir)"),
+    cluster_name: Optional[str] = typer.Option(None, help="Use as filename prefix (fallback to backend if omitted)"),
 ):
     """Generate subset geometries (coordinate blocks) for MBE jobs."""
     from .cluster import read_xyz, fragment_by_water_heuristic
     from .mbe import MBEParams, generate_subsets_xyz
 
     os.makedirs(out_dir, exist_ok=True)
-    xyz = read_xyz(xyz_path)
-    frags = fragment_by_water_heuristic(xyz, oh_cutoff=oh_cutoff)
+    if monomers_dir:
+        root = Path(monomers_dir)
+        if not root.is_dir():
+            raise typer.BadParameter(f"--monomers-dir must be a directory: {monomers_dir}")
+        frags = _load_fragments_from_monomer_dir(root, monomer_glob)
+    else:
+        xyz = read_xyz(xyz_path)
+        frags = fragment_by_water_heuristic(xyz, oh_cutoff=oh_cutoff)
     params = MBEParams(
         max_order=max_order,
         orders=orders,
         cp_correction=cp,
         backend=backend,
+        name_prefix=cluster_name or None,
         scheme=scheme,
     )
 
     count = 0
     for job_id, subset, geom in generate_subsets_xyz(frags, params):
         k = len(subset)
-        fn = os.path.join(out_dir, f"{job_id}_k{k}.geom")
+        # File name uses backend + order + 1-based indices separated by dots; no hash/suffix.
+        # Example: qchem_k2_1.3.geom
+        fn = os.path.join(out_dir, f"{job_id}.geom")
+        with open(fn, "w", encoding="utf-8") as f:
+            f.write(geom + "\n")
+        count += 1
+
+    typer.echo(f"Generated {count} geometries into: {out_dir}")
+
+
+@app.command("gen_from_monomer")
+def gen_from_monomer(
+    monomers_dir: str = typer.Argument(..., help="Directory of monomer .geom files"),
+    out_dir: str = typer.Option("mbe_geoms", help="Output directory"),
+    max_order: int = typer.Option(2, help="Generate subsets up to this order"),
+    orders: Optional[List[int]] = typer.Option(None, "--order", "--orders", help="Explicit subset orders (repeatable)"),
+    cp: bool = typer.Option(True, help="Use CP-style ghosts for fragments not in subset"),
+    scheme: str = typer.Option("mbe", help="MBE scheme/type label"),
+    backend: str = typer.Option("qchem", help="Backend formatting: qchem/orca"),
+    monomer_glob: str = typer.Option("*.geom", help="Glob to select monomer .geom files"),
+    cluster_name: Optional[str] = typer.Option(None, help="Use as filename prefix (fallback to backend if omitted)"),
+):
+    """Generate subset geometries directly from existing monomer .geom files."""
+    from .mbe import MBEParams, generate_subsets_xyz
+
+    root = Path(monomers_dir)
+    if not root.is_dir():
+        raise typer.BadParameter(f"monomers_dir must be a directory: {monomers_dir}")
+
+    frags = _load_fragments_from_monomer_dir(root, monomer_glob)
+    os.makedirs(out_dir, exist_ok=True)
+
+    params = MBEParams(
+        max_order=max_order,
+        orders=orders,
+        cp_correction=cp,
+        backend=backend,
+        name_prefix=cluster_name or None,
+        scheme=scheme,
+    )
+
+    count = 0
+    for job_id, subset, geom in generate_subsets_xyz(frags, params):
+        fn = os.path.join(out_dir, f"{job_id}.geom")
         with open(fn, "w", encoding="utf-8") as f:
             f.write(geom + "\n")
         count += 1
@@ -184,6 +265,21 @@ def template(
     chunk_size: Optional[int] = typer.Option(None, help="Inputs per child job (batch submit)"),
     module: Optional[str] = typer.Option(None, help="module load name"),
     command: Optional[str] = typer.Option(None, help="Executable command override"),
+    local_run: bool = typer.Option(
+        False,
+        "--local-run",
+        help="For PBS/Q-Chem: emit a local bash runner instead of submitting via qsub",
+    ),
+    control_file: Optional[str] = typer.Option(
+        None,
+        "--control-file",
+        help="Optional TOML control file path to enforce during run_with_control",
+    ),
+    builtin_control: bool = typer.Option(
+        False,
+        "--builtin-control",
+        help="Use the packaged default control policy (writes .mbe_default.control.toml)",
+    ),
     out: str = typer.Option("job.sh", help="Output script"),
     wrapper: bool = typer.Option(False, help="Emit a bash submitter that writes hidden scheduler files then qsub/sbatch"),
 ):
@@ -201,8 +297,11 @@ def template(
             mem_gb=mem_gb,
             queue=queue,
             project=project,
-            module=module or "qchem/5.2.2",
+            module=module or "qchem/6.2.2",
             chunk_size=chunk_size,
+            local_run=local_run,
+            control_file=control_file,
+            builtin_control=builtin_control,
             wrapper=wrapper,
         )
     elif sched == "slurm" and be == "orca":
@@ -239,6 +338,11 @@ def build_input(
     thresh: Optional[float] = typer.Option(None, help="Q-Chem: THRESH"),
     tole: Optional[float] = typer.Option(None, help="Q-Chem: TolE"),
     scf_convergence: Optional[str] = typer.Option(None, help="SCF convergence keyword (qchem: scf_convergence; orca: TightSCF etc.)"),
+    xc_grid: Optional[str] = typer.Option(
+        None,
+        "--xc-grid",
+        help="Q-Chem: XC_GRID value (e.g., 3 or 000075)",
+    ),
     grid: Optional[str] = typer.Option(None, help="ORCA grid keyword (e.g., GRID5)"),
     rem_extra: Optional[str] = typer.Option(None, help="Extra Q-Chem $rem lines (newline-separated)"),
     keyword_line_extra: Optional[str] = typer.Option(None, help="Extra ORCA header keywords"),
@@ -273,6 +377,7 @@ def build_input(
                 thresh=thresh,
                 tole=tole,
                 scf_convergence=scf_convergence,
+                xc_grid=xc_grid,
                 grid=grid,
                 rem_extra=rem_extra,
                 keyword_line_extra=keyword_line_extra,
@@ -289,11 +394,12 @@ def build_input(
         backend=backend,
         method=method,
         basis=basis,
-                charge=chg,
-                multiplicity=mult,
+        charge=chg,
+        multiplicity=mult,
         thresh=thresh,
         tole=tole,
         scf_convergence=scf_convergence,
+        xc_grid=xc_grid,
         grid=grid,
         rem_extra=rem_extra,
         keyword_line_extra=keyword_line_extra,

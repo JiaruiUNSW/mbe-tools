@@ -14,6 +14,7 @@ class MBEParams:
     orders: Optional[Sequence[int]] = None
     cp_correction: bool = True
     backend: str = "qchem"  # 'qchem' or 'orca'
+    name_prefix: Optional[str] = None  # override filename prefix (else backend)
     charge: int = 0
     multiplicity: int = 1
     scheme: str = "mbe"
@@ -78,7 +79,8 @@ def generate_subsets_xyz(
 
             # deterministic job id, include human-readable indices (1-based); hash not needed
             subset_str = ".".join(str(i + 1) for i in subset)
-            job_id = f"{params.backend}_k{k}_{subset_str}"
+            prefix = params.name_prefix or params.backend
+            job_id = f"{prefix}_k{k}_{subset_str}"
             geom = "\n".join(lines)
             yield job_id, subset, geom
 
