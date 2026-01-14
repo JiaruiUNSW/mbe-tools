@@ -17,6 +17,7 @@ def render_qchem_input(
     thresh: Optional[float] = None,
     tole: Optional[float] = None,
     scf_convergence: Optional[str] = None,
+    xc_grid: Optional[str] = None,
     rem_extra: Optional[str] = None,
 ) -> str:
     """Render a minimal Q-Chem input from a geometry block."""
@@ -36,6 +37,8 @@ def render_qchem_input(
         lines.append(f"  tole          {tole:g}")
     if scf_convergence is not None:
         lines.append(f"  scf_convergence {scf_convergence}")
+    if xc_grid is not None:
+        lines.append(f"  xc_grid       {xc_grid}")
     if rem_extra:
         for ln in rem_extra.strip().splitlines():
             ln = ln.strip()
@@ -85,6 +88,7 @@ def build_input_from_geom(
     thresh: Optional[float] = None,
     tole: Optional[float] = None,
     scf_convergence: Optional[str] = None,
+    xc_grid: Optional[str] = None,
     grid: Optional[str] = None,
     rem_extra: Optional[str] = None,
     keyword_line_extra: Optional[str] = None,
@@ -101,6 +105,7 @@ def build_input_from_geom(
             thresh=thresh,
             tole=tole,
             scf_convergence=scf_convergence,
+            xc_grid=xc_grid,
             rem_extra=rem_extra,
         )
     if name == "orca":

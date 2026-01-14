@@ -6,6 +6,7 @@ from typing import Optional
 _RUN_CONTROL_PY = textwrap.dedent(
     """
 import json
+import shlex
 import re
 import shutil
 import subprocess
@@ -68,7 +69,7 @@ def log_wrapper(msg: str) -> None:
         return
     try:
         with open(wrapper_log, "a", encoding="utf-8") as w:
-            w.write(msg + "\n")
+            w.write(msg + "\\n")
     except Exception:  # pragma: no cover - best effort
         pass
 
@@ -94,8 +95,11 @@ def write_state(path: Path, key: str, entry: dict) -> None:
 try:
     import tomllib  # type: ignore
 except Exception as exc:  # pragma: no cover - tomllib should exist
-    print(f"[ERR] tomllib unavailable: {exc}", file=sys.stderr)
-    sys.exit(2)
+    try:
+        import tomli as tomllib  # type: ignore
+    except Exception as exc2:  # pragma: no cover - fallback
+        print(f"[ERR] tomllib unavailable: {exc}; tomli fallback failed: {exc2}", file=sys.stderr)
+        sys.exit(2)
 
 control, had_control = load_control(control_path)
 if control.get("_parse_error"):
@@ -140,13 +144,14 @@ for attempt in range(1, total_attempts + 1):
         except Exception:
             pass
 
+    cmd_head = shlex.split(cmd_bin)
     if backend == "qchem":
-        cmd = [cmd_bin, "-np", str(ncpus), input_path, str(log_tmp)]
+        cmd = cmd_head + ["-np", str(ncpus), input_path, str(log_tmp)]
         run_kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         log_handle = None
     else:
         log_handle = open(log_tmp, "w", encoding="utf-8")
-        cmd = [cmd_bin, input_path]
+        cmd = cmd_head + [input_path]
         run_kwargs = {"stdout": log_handle, "stderr": subprocess.STDOUT}
 
     log_wrapper(f"[INFO] attempt {attempt}/{total_attempts} {input_path} -> {log_tmp}")
@@ -157,6 +162,14 @@ for attempt in range(1, total_attempts + 1):
 
     if not log_tmp.exists():
         log_wrapper(f"[WARN] missing log {log_tmp}")
+        try:
+            log_tmp.parent.mkdir(parents=True, exist_ok=True)
+            log_tmp.write_text(
+                f"[WRAPPER] Q-Chem produced no log file.\\ncmd={cmd}\\nreturncode={last_exit}\\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
         matches_any: list[str] = []
         has_block = False
     else:
@@ -172,6 +185,11 @@ for attempt in range(1, total_attempts + 1):
     last_matches = matches_any
     last_log_path = log_tmp
     target = final_log if success else base.with_suffix(f".attempt{attempt}.out")
+    if not log_tmp.exists():
+        try:
+            log_tmp.write_text("", encoding="utf-8")
+        except Exception:
+            pass
     if target.exists():
         try:
             target.unlink()
@@ -259,19 +277,57 @@ def _run_with_control_block(backend: str, command_var: str, ncpus_var: str, defa
     return [
         f"{command_var}=${{{command_var}:-{default_command}}}",
         "WRAPPER_LOG=${WRAPPER_LOG:-.mbe_wrapper.log}",
+        "PY_BIN=${PY_BIN:-python3}",
         "",
         "run_with_control() {",
         "  local input=\"$1\"",
         "  local ctrl=\"\"",
-        "  if [ -f \"${input}.mbe.control.toml\" ]; then",
+        "  if [ -n \"${CTRL_FILE:-}\" ] && [ -f \"${CTRL_FILE}\" ]; then",
+        "    ctrl=\"${CTRL_FILE}\"",
+        "  elif [ -f \"${input}.mbe.control.toml\" ]; then",
         "    ctrl=\"${input}.mbe.control.toml\"",
         "  elif [ -f \"mbe.control.toml\" ]; then",
         "    ctrl=\"mbe.control.toml\"",
         "  fi",
-        f"  python - \"${{input}}\" \"${{ctrl}}\" {backend} \"${{{command_var}}}\" \"${{{ncpus_var}}}\" \"${{WRAPPER_LOG}}\" <<'PY'",
+        f"  ${{PY_BIN}} - \"${{input}}\" \"${{ctrl}}\" {backend} \"${{{command_var}}}\" \"${{{ncpus_var}}}\" \"${{WRAPPER_LOG}}\" <<'PY'",
         _RUN_CONTROL_PY,
         "PY",
         "}",
+        "",
+    ]
+
+
+def _default_control_file_lines(path: str) -> list[str]:
+    return [
+        f"cat > \"{path}\" <<'EOF'",
+        "version = 1",
+        "",
+        "[confirm]",
+        "regex_any = [\"Thank you very much\", \"TOTAL ENERGY =\"]",
+        "regex_none = [\"SCF failed\", \"UNCONVERGED\", \"Q-Chem fatal error\"]",
+        "",
+        "[retry]",
+        "enabled = true",
+        "max_attempts = 2",
+        "sleep_seconds = 5",
+        "cleanup_globs = [\"*.rwf\", \"qchem_scratch/*\"]",
+        "write_failed_last = true",
+        "failed_last_path = \"last_failed.out\"",
+        "",
+        "[delete]",
+        "enabled = false",
+        "on_success_only = true",
+        "delete_inputs_globs = []",
+        "delete_outputs_globs = []",
+        "allow_delete_outputs = false",
+        "",
+        "[state]",
+        "state_file = \".mbe_state.json\"",
+        "skip_if_done = true",
+        "",
+        "[template]",
+        "strict = false",
+        "EOF",
         "",
     ]
 
@@ -288,7 +344,21 @@ def render_pbs_qchem(
     input_glob: str = "*.inp",
     chunk_size: Optional[int] = None,
     wrapper: bool = False,
+    local_run: bool = False,
+    control_file: Optional[str] = None,
+    builtin_control: bool = False,
 ) -> str:
+    if control_file:
+        ctrl_path = control_file
+        control_lines: list[str] = []
+    elif builtin_control:
+        ctrl_path = ".mbe_default.control.toml"
+        control_lines = _default_control_file_lines(ctrl_path)
+    else:
+        ctrl_path = None
+        control_lines = []
+    ctrl_env = [f"CTRL_FILE={ctrl_path}"] if ctrl_path else []
+    ctrl_env_heredoc = [f"CTRL_FILE=${{CTRL_FILE:-{ctrl_path}}}"] if ctrl_path else []
     mem_mb = int(mem_gb * 1000)
     if wrapper and chunk_size and chunk_size > 0:
         # Special-case: per-input submitter (one PBS per .inp)
@@ -298,10 +368,12 @@ def render_pbs_qchem(
                 "set -euo pipefail",
                 "shopt -s nullglob",
                 "",
+                *ctrl_env,
                 "SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
                 "INPUT_DIR=${INPUT_DIR:-\"${SCRIPT_DIR}/inputs_qchem\"}",
                 "ABS_INPUT_DIR=\"$(cd \"${INPUT_DIR}\" && pwd)\"",
                 "cd \"${ABS_INPUT_DIR}\"",
+                *control_lines,
                 "",
                 f"WALLTIME=${{WALLTIME:-{walltime}}}",
                 f"MEM_MB=${{MEM_MB:-{mem_mb}}}",
@@ -362,6 +434,8 @@ def render_pbs_qchem(
             "INPUT_DIR=${INPUT_DIR:-\"${SCRIPT_DIR}/inputs_qchem\"}",
             "cd \"${INPUT_DIR}\"",
             "",
+            *ctrl_env,
+            *control_lines,
             f"JOB_NAME=${{JOB_NAME:-{job_name}}}",
             "SANITIZED_JOB_NAME=${JOB_NAME//[^A-Za-z0-9_]/_}",
             "if [[ ! ${SANITIZED_JOB_NAME} =~ ^[A-Za-z] ]]; then SANITIZED_JOB_NAME=m_${SANITIZED_JOB_NAME}; fi",
@@ -404,6 +478,7 @@ def render_pbs_qchem(
         lines += [
             "",
             "cd \"${PBS_O_WORKDIR:-.}\"",
+            *ctrl_env_heredoc,
             "export TMPDIR=${TMPDIR:-/tmp}",
             "module load ${QC_MOD}",
             "eval \"files_to_run=(${chunk_escaped})\"",
@@ -430,6 +505,8 @@ def render_pbs_qchem(
             "set -euo pipefail",
             "shopt -s nullglob",
             "",
+            *ctrl_env,
+            *control_lines,
             f"JOB_NAME=${{JOB_NAME:-{job_name}}}",
             f"WALLTIME=${{WALLTIME:-{walltime}}}",
             f"MEM_MB=${{MEM_MB:-{mem_mb}}}",
@@ -480,6 +557,50 @@ def render_pbs_qchem(
         return "\n".join(lines) + "\n"
 
     if chunk_size and chunk_size > 0:
+        if local_run:
+            lines = [
+                "#!/bin/bash",
+                "set -euo pipefail",
+                "shopt -s nullglob",
+                "",
+                *ctrl_env,
+                *control_lines,
+                f"FILES_PER_JOB={chunk_size}",
+                f"MEM={mem_mb}Mb",
+                f"NCPUS={ncpus}",
+                f"WALLTIME={walltime}",
+                f"QC_MOD={module}",
+                f"BASE_JOBNAME={job_name}",
+                "",
+                "if command -v module >/dev/null 2>&1; then",
+                "  module load python3/3.11.7 || true",
+                "  module load ${QC_MOD} || true",
+                "fi",
+                "",
+                *_run_with_control_block("qchem", "QC_CMD", "NCPUS", "qchem"),
+                "",
+                f"files=( {input_glob} )",
+                "if ((${#files[@]} == 0)); then echo '[ERR] no inputs'; exit 1; fi",
+                "job_index=0",
+                "start=0",
+                "while (( start < ${#files[@]} )); do",
+                "  job_index=$(( job_index + 1 ))",
+                "  chunk=()",
+                "  end=$(( start + FILES_PER_JOB ))",
+                "  if (( end > ${#files[@]} )); then end=${#files[@]}; fi",
+                "  for (( i=start; i<end; i++ )); do chunk+=( \"${files[i]}\" ); done",
+                f"  NCPUS={ncpus}",
+                "  for f in \"${chunk[@]}\"; do",
+                "    [ -f \"$f\" ] || continue",
+                "    run_with_control \"$f\" || echo \"[WARN] failed: $f\"",
+                "  done",
+                "  start=$end",
+                "done",
+                "",
+                "echo \"[OK] processed $job_index chunks locally\"",
+            ]
+            return "\n".join(lines) + "\n"
+
         lines = [
             "#!/bin/bash",
             f"#PBS -N {job_name}",
@@ -496,9 +617,12 @@ def render_pbs_qchem(
             "set -euo pipefail",
             "shopt -s nullglob",
             "",
+            *ctrl_env,
+            *control_lines,
             f"FILES_PER_JOB={chunk_size}",
             f"MEM={mem_mb}Mb",
             f"NCPUS={ncpus}",
+            f"WALLTIME={walltime}",
             f"QC_MOD={module}",
             f"BASE_JOBNAME={job_name}",
             "",
@@ -523,7 +647,7 @@ def render_pbs_qchem(
             "#!/bin/bash",
             "#PBS -j oe",
             "#PBS -N ${jobname}",
-            "#PBS -l walltime=${walltime},mem=${MEM},ncpus=${NCPUS}",
+            "#PBS -l walltime=${WALLTIME},mem=${MEM},ncpus=${NCPUS}",
             "#PBS -o ${jobname}.log",
         ]
         if queue:
@@ -533,6 +657,7 @@ def render_pbs_qchem(
         lines += [
             "",
             "cd \"${PBS_O_WORKDIR:-.}\"",
+            *ctrl_env_heredoc,
             "export TMPDIR=${TMPDIR:-/tmp}",
             "module load ${QC_MOD}",
             "eval \"files_to_run=(${chunk_escaped})\"",
@@ -549,6 +674,34 @@ def render_pbs_qchem(
             "done",
             "",
             "echo \"[OK] submitted $job_index PBS jobs\"",
+        ]
+        return "\n".join(lines) + "\n"
+
+    if local_run:
+        lines = [
+            "#!/bin/bash",
+            "set -euo pipefail",
+            "shopt -s nullglob",
+            "",
+            *ctrl_env,
+            *control_lines,
+            f"QC_MOD={module}",
+            "QC_CMD=qchem",
+            f"NCPUS={ncpus}",
+            f"MEM_MB={mem_mb}",
+            "# Default command: qchem -np ${NCPUS}",
+            *_run_with_control_block("qchem", "QC_CMD", "NCPUS", "qchem"),
+            "",
+            "if command -v module >/dev/null 2>&1; then",
+            "  module load python3/3.11.7 || true",
+            "  module load ${QC_MOD} || true",
+            "fi",
+            f"for f in {input_glob}; do",
+            "  [ -f \"$f\" ] || continue",
+            "  run_with_control \"$f\" || echo \"[WARN] failed: $f\"",
+            "done",
+            "",
+            "echo \"[OK] all done locally\"",
         ]
         return "\n".join(lines) + "\n"
 
@@ -569,6 +722,8 @@ def render_pbs_qchem(
         "set -euo pipefail",
         "shopt -s nullglob",
         "",
+        *ctrl_env,
+        *control_lines,
         "cd \"${PBS_O_WORKDIR:-.}\"",
         "export TMPDIR=${TMPDIR:-/tmp}",
         f"module load {module}",

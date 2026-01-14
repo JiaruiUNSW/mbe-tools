@@ -62,3 +62,31 @@ def test_slurm_orca_chunk_mode_escapes_filenames():
     assert "chunk_escaped" in txt
     # Verify that we use eval to reconstruct the array safely
     assert 'eval "files_to_run=(${chunk_escaped})"' in txt
+
+
+def test_render_pbs_qchem_local_run_no_scheduler_header():
+    txt = render_pbs_qchem(job_name="local_job", local_run=True)
+    assert "#PBS -N" not in txt
+    assert "module load ${QC_MOD}" in txt
+    assert "run_with_control" in txt
+    assert "qsub" not in txt
+
+
+def test_render_pbs_qchem_local_run_chunked():
+    txt = render_pbs_qchem(job_name="local_chunk", chunk_size=4, local_run=True)
+    assert "FILES_PER_JOB=4" in txt
+    assert "processed $job_index chunks locally" in txt
+    assert "qsub" not in txt
+
+
+def test_render_pbs_qchem_with_control_file_injected():
+    txt = render_pbs_qchem(job_name="ctrl", control_file="custom_control.toml")
+    assert "CTRL_FILE=custom_control.toml" in txt
+    assert "run_with_control" in txt
+
+
+def test_render_pbs_qchem_builtin_control_file():
+    txt = render_pbs_qchem(job_name="ctrl_builtin", local_run=True, builtin_control=True)
+    assert "CTRL_FILE=.mbe_default.control.toml" in txt
+    assert "cat > \".mbe_default.control.toml\" <<'EOF'" in txt
+    assert "regex_any = [\"Thank you very much\", \"TOTAL ENERGY =\"]" in txt
